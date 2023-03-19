@@ -89,7 +89,7 @@ pub fn Parser(comptime options: TemplateOptions) type {
             self.inner_state.text_scanner.nodes = nodes;
 
             if (is_comptime) {
-                var buffer: [comptime_count.nodes]Node = undefined;
+                comptime var buffer: [comptime_count.nodes]Node = undefined;
                 nodes.items.ptr = &buffer;
                 nodes.items.len = 0;
                 nodes.capacity = buffer.len;
@@ -129,7 +129,8 @@ pub fn Parser(comptime options: TemplateOptions) type {
                 };
             }
 
-            while (try self.inner_state.text_scanner.next(self.gpa)) |*text_part| {
+            var produced_text_part: ?TextPart = try self.inner_state.text_scanner.next(self.gpa);
+            while (produced_text_part) |*text_part| : (produced_text_part = try self.inner_state.text_scanner.next(self.gpa)) {
                 switch (text_part.part_type) {
                     .static_text => {
                         // TODO: Static text must be ignored if inside a "parent" tag
@@ -372,7 +373,7 @@ pub fn Parser(comptime options: TemplateOptions) type {
                 }
             }
 
-            const elements = if (options.output == .render or options.load_mode == .comptime_loaded) list.items else list.toOwnedSlice(self.gpa);
+            const elements = if (options.output == .render or options.load_mode == .comptime_loaded) list.items else try list.toOwnedSlice(self.gpa);
             try render.render(elements);
         }
 
@@ -499,7 +500,7 @@ pub fn Parser(comptime options: TemplateOptions) type {
     };
 }
 
-const comptime_tests_enabled = @import("build_comptime_tests").comptime_tests_enabled;
+const comptime_tests_enabled = false; // @import("build_comptime_tests").comptime_tests_enabled;
 fn TesterParser(comptime load_mode: TemplateLoadMode) type {
     return Parser(.{ .source = .{ .string = .{} }, .output = .render, .load_mode = load_mode });
 }

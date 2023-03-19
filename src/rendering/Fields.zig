@@ -49,7 +49,7 @@ pub inline fn getField(data: anytype, comptime field_name: []const u8) field_typ
         return runtime_null;
     }
 
-    return if (is_by_value) @field(lhs(data), field_name) else &@field(lhs(data), field_name);
+    return if (is_by_value) @field(lhs(Data, data), field_name) else &@field(lhs(Data, data), field_name);
 }
 
 pub inline fn getRuntimeValue(ctx: anytype) context_type: {
@@ -158,19 +158,17 @@ fn Lhs(comptime T: type) type {
     }
 }
 
-pub inline fn lhs(value: anytype) Lhs(@TypeOf(value)) {
-    const T = @TypeOf(value);
-
+pub inline fn lhs(comptime T: type, value: T) Lhs(T) {
     if (comptime trait.is(.Optional)(T)) {
-        return lhs(value.?);
+        return lhs(@TypeOf(value.?), value.?);
     } else if (comptime needsDerref(T)) {
-        return lhs(value.*);
+        return lhs(@TypeOf(value.*), value.*);
     } else {
         return value;
     }
 }
 
-pub inline fn needsDerref(comptime T: type) bool {
+pub fn needsDerref(comptime T: type) bool {
     comptime {
         if (trait.isSingleItemPtr(T)) {
             const Child = meta.Child(T);
@@ -190,7 +188,8 @@ pub fn byValue(comptime TField: type) bool {
         ++ @typeName(TField));
 
         const max_size = @sizeOf(ErasedType);
-        const is_zero_size = @sizeOf(TField) == 0;
+        const size = if (TField == @TypeOf(null)) 0 else @sizeOf(TField);
+        const is_zero_size = size == 0;
 
         const is_pointer = trait.isSlice(TField) or
             trait.isSingleItemPtr(TField);
@@ -199,9 +198,9 @@ pub fn byValue(comptime TField: type) bool {
 
         const is_ffi_userdata = TField == extern_types.UserData;
 
-        const is_lambda_invoker = @sizeOf(TField) <= max_size and lambda.isLambdaInvoker(TField);
+        const is_lambda_invoker = size <= max_size and lambda.isLambdaInvoker(TField);
 
-        const can_embed = @sizeOf(TField) <= max_size and
+        const can_embed = size <= max_size and
             (trait.is(.Enum)(TField) or
             trait.is(.EnumLiteral)(TField) or
             TField == bool or
@@ -213,10 +212,10 @@ pub fn byValue(comptime TField: type) bool {
     }
 }
 
-pub inline fn isNull(data: anytype) bool {
-    return switch (@typeInfo(@TypeOf(data))) {
+pub inline fn isNull(comptime T: type, data: T) bool {
+    return switch (@typeInfo(T)) {
         .Pointer => |info| switch (info.size) {
-            .One => return isNull(data.*),
+            .One => return isNull(@TypeOf(data.*), data.*),
             .Slice => return false,
             .Many => @compileError("[*] pointers not supported"),
             .C => @compileError("[*c] pointers not supported"),
@@ -226,8 +225,8 @@ pub inline fn isNull(data: anytype) bool {
     };
 }
 
-pub inline fn lenOf(data: anytype) ?usize {
-    return switch (@typeInfo(@TypeOf(data))) {
+pub inline fn lenOf(comptime T: type, data: T) ?usize {
+    return switch (@typeInfo(T)) {
         .Pointer => |info| switch (info.size) {
             .One => return null,
             .Slice => return data.len,
@@ -235,7 +234,7 @@ pub inline fn lenOf(data: anytype) ?usize {
             .C => @compileError("[*c] pointers not supported"),
         },
         .Array, .Vector => return data.len,
-        .Optional => if (data) |value| return lenOf(value) else null,
+        .Optional => if (data) |value| return lenOf(@TypeOf(value), value) else null,
         else => return null,
     };
 }
@@ -254,7 +253,7 @@ fn FieldRef(comptime T: type, comptime field_name: []const u8) type {
             return FieldRef(meta.Child(T), field_name);
         } else {
             const instance: T = undefined;
-            return @TypeOf(if (byValue(TField)) @field(instance, field_name) else &@field(instance, field_name));
+            return if (byValue(TField)) @TypeOf(@field(instance, field_name)) else @TypeOf(&@field(instance, field_name));
         }
     }
 }
@@ -688,7 +687,7 @@ test "zero size" {
 
     var field2 = getField(&data, "value2");
     try std.testing.expect(field2.len == 3);
-    try std.testing.expect(@sizeOf(@TypeOf(field2)) == @sizeOf(usize));
+    try std.testing.expect(@sizeOf(@TypeOf(field2)) == @sizeOf([]const Empty));
 
     var field3 = getField(&data, "value3");
     try std.testing.expect(field3 == {});
