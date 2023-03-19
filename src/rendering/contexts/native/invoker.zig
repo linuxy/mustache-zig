@@ -214,7 +214,7 @@ pub fn Invoker(comptime Writer: type, comptime PartialsMap: type, comptime optio
                         .Struct => |info| {
                             if (info.is_tuple) {
                                 const derref = comptime trait.isSingleItemPtr(Data);
-                                inline for (info.fields) |_, i| {
+                                inline for (info.fields, 0..) |_, i| {
                                     if (index == i) {
                                         return Result{
                                             .field = try action_fn(
